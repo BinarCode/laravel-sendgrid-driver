@@ -46,6 +46,7 @@ class SendgridTransport extends AbstractTransport
         $this->client = $client;
         $this->apiKey = $api_key;
         $this->endpoint = $endpoint ?? self::BASE_URL;
+        $this->attachments = [];
 
         parent::__construct();
     }
@@ -82,8 +83,12 @@ class SendgridTransport extends AbstractTransport
             ],
             'json' => $data,
         ];
+    
+        $response = $this->post($payload);
 
-        $this->post($payload);
+        $message->getOriginalMessage()
+            ->getHeaders()
+            ->addTextHeader('X-Sendgrid-Message-Id', $response->getHeaderLine('X-Message-Id'));
     }
 
     /**
@@ -194,7 +199,7 @@ class SendgridTransport extends AbstractTransport
             $attachments[] = [
                 'content' => base64_encode($attachment->getBody()),
                 'filename' => $this->getAttachmentName($attachment),
-                'type' => $attachment->getMediaType(),
+                'type' => $this->getAttachmentContentType($attachment),
                 'disposition' => $attachment->getPreparedHeaders()->getHeaderParameter('Parameterized', 'Content-Disposition'),
                 'content_id' => $attachment->getContentId(),
             ];
@@ -205,6 +210,11 @@ class SendgridTransport extends AbstractTransport
     private function getAttachmentName(DataPart $dataPart): string
     {
         return $dataPart->getPreparedHeaders()->getHeaderParameter('Content-Disposition', 'filename');
+    }
+
+    private function getAttachmentContentType(Datapart $dataPart): string
+    {
+        return $dataPart->getMediaType() . '/' . $dataPart->getMediaSubtype();
     }
 
     /**

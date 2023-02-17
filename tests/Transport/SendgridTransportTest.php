@@ -3,11 +3,13 @@
 namespace Transport;
 
 use GuzzleHttp\Client;
+use Illuminate\Support\Str;
 use Sichikawa\LaravelSendgridDriver\SendGrid;
 use Sichikawa\LaravelSendgridDriver\Transport\SendgridTransport;
+use Symfony\Component\Mailer\Envelope;
+use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
-use Symfony\Component\Mime\Part\TextPart;
 
 class SendgridTransportTest extends \TestCase
 {
@@ -101,6 +103,37 @@ class SendgridTransportTest extends \TestCase
         ], $result);
     }
 
+    public function testXMessageID()
+    {
+        $client = $this->getMockBuilder(\GuzzleHttp\Client::class)
+            ->onlyMethods(['request'])
+            ->getMock();
+
+        $client->expects($this->once())
+            ->method('request')
+            ->willReturn(new \GuzzleHttp\Psr7\Response(200, [
+                'X-Message-ID' => $messageId = Str::random(32),
+            ]));
+
+        $transport = new SendgridTransport($client, $this->api_key);
+        $reflection = new \ReflectionClass($this->transport);
+
+        $email = (new Email())
+            ->text('test body')
+            ->html('<body>test body</body>')
+            ->to(new Address('to@sink.sendgrid.net', 'test_to'))
+            ->from(new Address('from@sink.sendgrid.net', 'test_from'));
+
+        $send = new SentMessage($email, Envelope::create($email));
+
+        $method = $reflection->getMethod('doSend');
+        $method->setAccessible(true);
+
+        $method->invoke($transport, $send);
+
+        $this->assertEquals($messageId, $email->getHeaders()->getHeaderBody('X-Sendgrid-Message-ID'));
+    }
+
     public function testGetReplyTo()
     {
         $email = (new Email())
@@ -142,7 +175,7 @@ class SendgridTransportTest extends \TestCase
             [
                 'content' => base64_encode($file),
                 'filename' => 'test.png',
-                'type' => 'image',
+                'type' => 'image/png',
                 'disposition' => null,
             ]
         ], $result);
